@@ -1,0 +1,326 @@
+#!/bin/dash
+
+
+# IMPORTANT: EDIT THIS FILE IN ~/scripts/lib/REQUIRE, then copy to project
+
+# Usage:  REQUIRE <condition> <argument> [preposition] 
+# :: Runtime shell script validator tool
+# :: note: the [preposition] is not always optional. Some <condition>s require it
+# :: note: if test fails, REQUIRE_ERROR_MESSAGE is set and returns with exit code 80
+# ::       use ERROR to exit and display message; ex: REQUIRE ... || ERROR
+#
+#    <condition>      <argument>    [preposition]          
+#    FILE             <path>
+#    DIRECTORY        <path>
+#    VARIABLE         <name>        ["as" <condition> [preposition]]  Preposition is equiv to: REQUIRE <condition> $<name> [preposition]; <name> us validated via REQUIRE VALID-NAME <name>
+#    BLOCK-DEVICE     <path>
+#    DEVICE           <name>                                          <name> must be block or character device in /dev
+#    HOST             <host>                                          Attempts to ping <host>
+#    VALID-NAME       <name>                                          Validates <name> as a valid shell variable name
+#    INTEGER          <integer>     ["is" <test> <integer> [label]]
+#    <test>           <integer>     "ARGUMENT"|"ARGUMENTS"            Equivielent to REQUIRE INTEGER $# IS <test> <integer> ARGUMENT(S)
+#    KERNEL-MODULE    <name>
+#    
+#    Integer Tests (aka <test>):
+#       - AT-LEAST & NO-LESS-THAN
+#       - GREATER-THAN
+#       - LESS-THAN
+#       - AT-MOST & NO-GREATER-THAN
+#       - EXACTLY
+
+
+
+
+#     ____________
+# .-=[ TODO/IDEAS ]=-.
+#     ‾‾‾‾‾‾‾‾‾‾‾‾
+
+#    REQUIRE <custom> calls REQUIRE_<custom>
+#    REQUIRE ... OR <command>   (retests initial requirement after <command>)
+#    REQUIRE COMMAND <name>
+#    require FUNCTION <name> 
+
+
+#    THAT preposition
+#       REQUIRE FILE      <path> ["THAT" "BEGINS-WITH|CONTAINS|ENDS-WITH" <VALUE>]
+#       REQUIRE VARIABLE  <name> ["THAT" "BEGINS-WITH|CONTAINS|ENDS-WITH" <VALUE>]
+#       REQUIRE DIRECTORY <path> ["THAT CONTAINS" "FILE|DIRECTORY" <PATH> ...]
+
+#    REQUIRE ... THEN <action=DO|SET|...> <...>
+#
+#    REQUIRE ::
+#       VARIABLE MEOW AS STRING
+#       THEN DO setup_cat "$MEOW"
+#    END_REQUIRE
+
+
+#    REQUIRE ... -- <extended-error-text>
+
+
+
+
+
+
+#     ________________________
+# .-=[ REQUIRE ERROR HANDLING ]=-.
+#     ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+# Reasoning:
+# - We only want to output error messages if the REQUIRE statement results in an exit
+#      Example:
+#      REQUIRE DIRECTORY meow || mkdir meow
+
+# - This is done via the following syntax:
+#	REQUIRE ... || ERROR
+
+# - ERROR will display $REQUIRE_ERROR_MESSAGE if none is provided and the return code
+#    is $REQUIRE_ERROR_CODE
+
+# - REQUIRE will print an error message and exit when a syntax error is encountered 
+
+
+
+
+
+
+
+
+
+#     ________________
+# .-=[ ERROR function ]=-.
+#     ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+
+ERROR(){
+	exit_code="${?:-1}"
+	if [ "$exit_code" = "$REQUIRE_ERROR_CODE" ]; then
+		[ $#  = 0 ] && echo "ERROR: $REQUIRE_ERROR_MESSAGE";
+		[ $# != 0 ] && echo "ERROR: $*"
+		exit "$REQUIRE_ERROR_CODE"
+	elif [ $# -gt 0 ]; then
+		case "$1" in 
+			(*[!0-9]*)
+				echo "ERROR: $*"
+				exit "$exit_code"
+				;;
+			(*)
+				echo "ERROR: $*"
+				exit "$1"
+				;;
+		esac
+	else
+		echo "ERROR: unknown error"
+		exit "$exit_code"
+	fi
+}
+
+
+
+
+
+
+#     _____________________
+# .-=[ ERR helper function ]=-.
+#     ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+
+ERR(){   
+   REQUIRE_ERROR_MESSAGE="$*"
+   return "$REQUIRE_ERROR_CODE"
+}
+
+
+
+
+
+
+#     __________________
+# .-=[ Global Variables ]=-.
+#     ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+
+readonly REQUIRE_ERROR_CODE="80"
+REQUIRE_ERROR_MESSAGE=""
+
+
+
+
+
+#     _______________
+# .-=[ REQUIRE alias ]=-.
+#     ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+
+alias REQUIRE="_REQUIRE_ \$# "
+
+
+
+
+
+#     ____________________
+# .-=[ _REQUIRE_ function ]=-.
+#     ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+
+_REQUIRE_(){
+   REQUIRE_ERROR_MESSAGE=""
+
+   # Number of arguments in caller's namespace is pasd via REQUIRE alias
+   local PREFIX="$1"
+   shift
+   
+   if [ $# = 0 ]; then
+      ERROR "REQUIRE requires at least 1 argument"
+      exit 1
+   fi
+
+
+
+   [ $# -gt 1 ] || ERROR "Insufficient arguments";
+
+
+
+   case "$1" in
+      (FILE):
+         [ -e "$2" ]                               || { ERR "Required file does not exist: $2"; return; }
+         ;;
+         
+      (DIRECTORY):
+         [ -d "$2" ]                               || { ERR "Required directory does not exist: $2"; return; }
+         ;;
+         
+      (VARIABLE):
+         REQUIRE VALID-NAME "$2" 
+         REQUIRE_VARIABLE_VALUE="$(eval "printf \"\${$2:-}\"")"
+         REQUIRE_VARIABLE_NAME="$2"
+
+         [ "$REQUIRE_VARIABLE_VALUE" ]                      || { ERR "Required variable unset: $2"; return; }
+
+         # REQUIRE VARIABLE(1) <NAME>(2) AS(3) <CONDITION>(4)
+         [ $# -gt 3 ] && [ "$3" = "AS" ] && {
+            REQUIRE "$4" "$REQUIRE_VARIABLE_VALUE" || return;
+         }
+            #&& eval "REQUIRE \"$4\" \"\$$2\""
+         ;;
+
+      (PIPE):
+         [ -p "$2" ]                               || { ERR "Required named pipe does not exist: '$2'"; return; }
+         ;;
+
+      (BLOCK-DEVICE):
+         [ -b "$2" ]			                   || { ERR "Required Block device does not exist: '$2'"; return; }
+         ;;
+
+      (DEVICE):
+         [ -b "/dev/$2" ] || [ -c "/dev/$2" ]      || { ERR "Required device does not exist: '$2'"; return; }
+         ;;
+         
+      (HOST):
+         ping -c 1 -q "$2"                         || { ERR "Required host is not responding to ping request: '$2'"; return; }
+         ;;
+
+      (INTEGER):
+         case "$2" in
+            (*[!0-9]*) ERR "REQUIRE: invalid value ($2) -- must be an integer"; return;;
+         esac
+
+         # REQUIRE INTEGER <value> IS <test> <comp-value> [label]
+         #         1       2       3  4      5            6
+         [ $# -ge 5 ] && [ "$3" = "IS" ] && {
+            case "$4" in
+         	   (NO-LESS-THAN|AT-LEAST):
+                  [ "$2" -ge "$5" ] || { ERR "REQUIRE - ${6:-$1} must be $4 $5"; return; }
+         	      ;;
+         	   (GREATER-THAN):
+                  [ "$2" -gt "$5" ] || { ERR "REQUIRE - ${6:-$1} must be $4 $5"; return; }
+         	      ;;
+         	   (LESS-THAN):
+                  [ "$2" -lt "$5" ] || { ERR "REQUIRE - ${6:-$1} must be $4 $5"; return; }
+         	      ;;
+         	   (NO-GREATER-THAN|AT-MOST):
+                  [ "$2" -le "$5" ] || { ERR "REQUIRE - ${6:-$1} must be $4 $5"; return; }
+         	      ;;
+               (EXACTLY):
+                  [ "$2" = "$5" ] || { ERR "REQUIRE - ${6:-$1} must be $4 $5"; return; }
+                  ;;
+         	   (*):
+                  { ERR "REQUIRE - Syntax Error - Unknown <test> in $*"; exit 1; }
+         	      ;;
+         	esac
+         	
+         }
+         ;;
+         
+      (VALID-NAME):
+         case "$2" in
+            ([0-9]*|*[!a-zA-Z0-9_]*) { ERR "REQUIRE - invalid name ($2)"; return; };;
+            (*) true;;
+         esac
+         ;;
+         
+      (KERNEL-MODULE):
+         lsmod | grep --silent -E "^$2 *" \
+            || { ERR "REQUIRE - kernel module '$2' not loaded"; return; }
+         ;;
+
+      (MOUNTPOINT):
+         lsblk -o mountpoint | grep --silent -E "^$2$" \
+            || { ERR "REQUIRE - nothing is mounted at '$2'"; return; }
+         ;;
+
+      (AT-LEAST|NO-LESS-THAN|GREATER-THAN|LESS-THAN|NO-GREATER-THAN|AT-MOST|EXACTLY):
+         # syntax: REQUIRE AT-LEAST(1) n(2) ARGUMENTS(3)
+         [ $# = 3 ] || { ERROR "REQUIRE: invalid syntax. 'REQUIRE <test> <integer> ARGUMENT[S]' requires exactly 3 arguments"; return; }
+         [ "$3" = "ARGUMENT" ] || [ "$3" = "ARGUMENTS" ] \
+            || { ERROR "REQUIRE: invalid syntax. Expected 'ARGUMENT' or 'ARGUMENTS', but found '$3'"; return; }
+
+         REQUIRE INTEGER "$PREFIX" IS "$@"
+         return
+         ;;
+
+      (ARGUMENT):
+         # syntax: REQUIRE ARGUMENT <value> AS <condition>
+         # example: REQUIRE ARGUMENT "$1" AS DIRECTORY
+         [ $# -gt 3 ] || { ERROR "REQUIRE: invalid syntax. 'REQUIRE ARGUMENT <value> AS <condition>' requires at least 4 arguments. <value> should be quoted"; return; }
+         [ "$3" = "AS" ] || { ERROR "REQUIRE: invalid syntax. Expected 'AS', but found '$3'"; return; }
+         REQUIRE "$4" "$2" || { ERR "REQUIRE: invalid argument in function ${__IMPORT_function_name:-unknown}(). expected '$4', but found '$2'"; return; }
+         ;; 
+            
+      (*):
+         local external_require_command
+         for external_require_command in \
+            "${PATH_TO_LIBRARY+$PATH_TO_LIBRARY/sys/REQUIRE_$1}" \
+            "$HOME/scripts/lib/$REQUIRE_$1"\
+            "$HOME/lib/sh/$REQUIRE_$1" \
+            "$HOME/lib/$REQUIRE_$1" \
+            "$HOME/.local/lib/sh/$REQUIRE_$1" \
+            "$HOME/.local/lib/$REQUIRE_$1" 
+            do [ -f "$external_require_command" ] && {
+             	"$external_require_command" "$@"
+             	break
+            }
+         done || {
+         	ERR "REQUIRE: UNKNOWN REQUIREMENT $1"; return;
+         }
+         ;;
+   esac
+
+   return 0;
+}
+
+
+
+
+
+#define EX_OK		0	/* successful termination */
+#define EX__BASE	64	/* base value for error messages */
+#define EX_USAGE	64	/* command line usage error */
+#define EX_DATAERR	65	/* data format error */
+#define EX_NOINPUT	66	/* cannot open input */
+#define EX_NOUSER	67	/* addressee unknown */
+#define EX_NOHOST	68	/* host name unknown */
+#define EX_UNAVAILABLE	69	/* service unavailable */
+#define EX_SOFTWARE	70	/* internal software error */
+#define EX_OSERR	71	/* system error (e.g., can't fork) */
+#define EX_OSFILE	72	/* critical OS file missing */
+#define EX_CANTCREAT	73	/* can't create (user) output file */
+#define EX_IOERR	74	/* input/output error */
+#define EX_TEMPFAIL	75	/* temp failure; user is invited to retry */
+#define EX_PROTOCOL	76	/* remote error in protocol */
+#define EX_NOPERM	77	/* permission denied */
+#define EX_CONFIG	78	/* configuration error */
+#define EX__MAX	78	/* maximum listed value */
