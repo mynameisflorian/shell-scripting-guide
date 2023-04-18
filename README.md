@@ -74,10 +74,10 @@
 # Input Validation
 
 ### is_digits()
-is_digits(){ [ "${1##*[!0-9]*}" ]; }
+```is_digits(){ [ "${1##*[!0-9]*}" ]; }```
 
 ### is_variable_name()
-is_variable_name(){ [ "${1##[0-9]*|*[!a-zA-Z0-9_]*}" ]; }
+```is_variable_name(){ [ "${1##[0-9]*|*[!a-zA-Z0-9_]*}" ]; }```
 
 
 
