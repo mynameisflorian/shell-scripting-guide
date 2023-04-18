@@ -1,44 +1,44 @@
 # shell-scripting-guide
 
 1) Whenever possible, **use dash instead of bash**
-    * Dash is faster
-    * Dash is less complicated
-    * Dash is less error-prone
-    * Dash encourages "proper" use of shell scripts (see below)
+    * Dash is faster
+    * Dash is less complicated
+    * Dash is less error-prone
+    * Dash encourages "proper" use of shell scripts (see below)
     
 2) **Always quote variables**, unless variable expansion is specifically desired.
-    * If possible, break such use into it's own function and document quoting exception.
-    * There are many, minor, exceptions to when variables do not need to be quoted, but in all cases unneeded quoting does not cause problems; and it's much easier to remember to always quote than it is to remember all the exceptions
+    * If possible, break such use into it's own function and document quoting exception.
+    * There are many, minor, exceptions to when variables do not need to be quoted, but in all cases unneeded quoting does not cause problems; and it's much easier to remember to always quote than it is to remember all the exceptions
 
 3) **Avoid global variables**. 
-    * Use `readonly` global constants with a prefix to avoid collisions
-    * Once a global readonly variable is set, it cannot be unset or used in a local context
+    * Use `readonly` global constants with a prefix to avoid collisions
+    * Once a global readonly variable is set, it cannot be unset or used in a local context
 
 4) **Use "local" variables** in functions
-    * Without the local specifier, any variables declared within a function are global variables.
+    * Without the local specifier, any variables declared within a function are global variables.
 
 5) **Validate application and function inputs**
 
 6) **Avoid using eval**
-    * If you must use it, use with extreme caution
-    * See section below on safe use of eval
+    * If you must use it, use with extreme caution
+    * See section below on safe use of eval
 
 7) **Use `set -o nounset`**
 
 8) When using **boolean variables** (true/false):
-    * True: Use the value "true" 
-    * False: Use the null value (ie "")
-    * `[ "$boolean_value" ]`
+    * True: Use the value "true" 
+    * False: Use the null value (ie "")
+    * `[ "$boolean_value" ]`
     
 9) Avoid combining `&&` and `||` into a single expression
-    * evaluation can be unintuitive
-    * `some_command || X && Y` will execute X if some_command fails, Y if some_command succeeds, and Y if X succeeds
-    * `some_command && X || Y` will execute X if some_command succeeds, Y if some_command fails, and Y if X fails
+    * evaluation can be unintuitive
+    * `some_command || X && Y` will execute X if some_command fails, Y if some_command succeeds, and Y if X succeeds
+    * `some_command && X || Y` will execute X if some_command succeeds, Y if some_command fails, and Y if X fails
     
 10) Using `set -o errexit` without additional coding restrictions produces undesirable results
-    * see section below for additional restrictions
-    * otherwise, catch all errors manually:
-      * `some_command blah blah || ERROR "...message..."`
+    * see section below for additional restrictions
+    * otherwise, catch all errors manually:
+        * `some_command blah blah || ERROR "...message..."`
       
 11) To completely shut down a script with backgrounded child processes, use `trap 'kill -- -$$' EXIT`
 
@@ -71,7 +71,7 @@
 
 
 
-## Input Validation
+# Input Validation
 
 ### is_digits()
 is_digits(){ [ "${1##*[!0-9]*}" ]; }
@@ -79,7 +79,13 @@ is_digits(){ [ "${1##*[!0-9]*}" ]; }
 ### is_variable_name()
 is_variable_name(){ [ "${1##[0-9]*|*[!a-zA-Z0-9_]*}" ]; }
 
-## Safe(er) use of Eval
+
+
+
+
+
+
+# Safe(er) use of Eval
 ### ref(): Variable Reference Getter
 ```
 # Usage: ref <variable-name>
@@ -116,7 +122,7 @@ note: 
 
 
 
-## Working with filenames
+# Working with filenames
 
 Working with files
 
@@ -144,7 +150,7 @@ done
         
 
 
-## Shell Script Documentation
+# Shell Script Documentation
 * https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
 * man dash
 
@@ -152,7 +158,7 @@ done
 
 
 
-## Notes on errexit
+# Notes on errexit
 
 "set -o errexit" should be used with caution. 
 
@@ -162,7 +168,7 @@ Use of functions in these contexts "inhibits" errexit within the function:
 
 Recommended rules if using errexit:
 * do not use functions as conditionals in "if" statements (unless function meant specifically to be used this way)
-* do not use "short circuit" expressions on functions (ex some_function || error "blah")
+* do not use "short circuit" expressions on functions (ex some_function || do_something)
 * all functions should use explicit return statements (see gotchya)
 
 ### Gotchya #1
@@ -179,7 +185,7 @@ triggering an errexit
 
 
 
-## Miscellaneous shell tricks
+# Miscellaneous shell tricks
 
 ### Execute if variable null or unset
 ```        
