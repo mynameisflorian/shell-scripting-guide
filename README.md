@@ -52,10 +52,10 @@
 ```
   while [ "$#" -gt 0 ]; do case "$1" in
     (--a)
-      argument__a="true"
+      readonly argument__a="true"
       ;;
     (--name=*)
-      argument__name="${1#--name=}"
+      readonly argument__name="${1#--name=}"
       ;;
     (""|--help)
       print_usage
@@ -66,7 +66,6 @@
       exit 1
       ;;
   esac; shift; done
-  readonly argument__a argument__name
 ```
 
 
@@ -74,10 +73,10 @@
 # Input Validation
 
 ### is_digits()
-```is_digits(){ [ "${1##*[!0-9]*}" ]; }```
-
+```is_digits(){ case "$1" in (*[!0-9]*|"") return 1;; (*) return 0;; esac; }```
+note: ```[ "${1##*[!0-9]*}" ]``` also works, but is slower
 ### is_variable_name()
-```is_variable_name(){ [ "${1##[0-9]*|*[!a-zA-Z0-9_]*}" ]; }```
+```is_variable_name(){ [ case "$1" in ([0-9]*|*[!a-zA-Z0-9_]*|"") return 1;; (*) return 0;; esac; }```
 
 
 
@@ -93,7 +92,7 @@
 ref(){
   [ "$#" = 1 ] || ERROR "ref(): requires exactly one argument"
   case "$1" in ([0-9]*|*[!a-zA-z0-9_]*) ERROR "ref(): invalid variable name";; esac
-  eval echo "\$$1"
+  eval "printf \"%s\" \"\$$1\""
 }
 ```
 ### set_ref(): Variable Reference Setter
@@ -103,19 +102,36 @@ ref(){
 set_ref(){
   [ "$#" = 2 ] || ERROR "set_ref(): requires exactly 2 arguments"
   case "$1" in ([0-9]*|*[!a-zA-z0-9_]*) ERROR "set_ref(): invalid variable name";; esac
-  eval "$1='$(echo "$2"|sed "s/'/'\"'\"'/g")'"
+  eval "$1=\"\$2\""
 }
 ```
 note: 
-* single-quotes strings are completely literal (ie no character has any special meaning)
-* two strings directly adjacent to each other (w/o any whitespace) are concated (combined) into a single string
-* the sed statement replaces any single quotes(`'`) with a single-quote-escaping-sequence(`'"'"'`)
-* `'"'"'` evaluates as:
-    * exit singly-quoted string
-    * enter doubly-quoted string
-    * supply a single-quote character to the string
-    * exit doubly quoted string
-    * re-enter singly-quoted string
+
+
+
+# POSIX shell-only string replacement function
+```
+# FUNCTION: replace <in-string> <match-string> <replace-string>
+# ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+# result is stored in the $return variable
+replace(){
+    local rest="$1"
+    local left=""
+    return=""
+    while {
+        left="${rest%%"$2"*}"
+        [ "$left" != "$rest" ]
+    }; do
+        rest="${rest#*"$2"}"
+        return="$return$left$3"
+    done
+    return="$return$rest"
+    return 0
+}
+```
+(see "working with filenames" for usage example)
+
+
 
 
 
@@ -123,28 +139,43 @@ note: 
 
 
 # Working with filenames
-
-Working with files
-
 * Filenames can contain any character except null
 * Filenames are easily mangled when sent through a stream/pipe or stored in a file
 * The safest place to keep a filename is in a variable
-* To escape a filename, use:
-   * ```/usr/bin/printf "%q" "$filename"```
-* to unescape a filename use:
-   * ```somecommand "$(eval /usr/bin/printf "%s" "$escaped_filename")"```
-   * DOES NOT WORK IN DASH -- TODO DOCUMENT WORKAROUND
-* currently newlines do not correctly unescape
-* Verification test:
+### To escape a filename, use:
 ```
+readonly newline="
+"
+escape(){
+    replace "$1" '\' '\\ '
+    replace "$return" "$newline" '\n'
+}
+```
+### to unescape a filename use:
+```
+unescape(){
+    replace "$1" '\n' "$newline"
+    replace "$return" '\\ ' '\'
+}
+```
+### Verification test:
+```
+mkdir /tmp/filetest
+cd /tmp/filetest
+touch "\n$newline"
+# more filenames
 for f in *; do
-   fn="$(/usr/bin/printf "%q" "$f")"
-   fnf="$(eval echo $fn)"
-   [ "$f" = "$fnf" ] \
-      || printf "Fail: %s != %s\n" "$f" "$fnf"
+   escape "$f"
+   printf "%s" "$return" | {
+      read -r fn
+      unescape "$fn"
+      [ "$f" = "$return" ] || echo "fail: '$f' != '$return'"
+   }
 done
+cd -
+rm -rf /tmp/filetest
 ```
-(tested in bash and dash, dash fails to unescape on filenames with embedded newlines
+
 
 
         
