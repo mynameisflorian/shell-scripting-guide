@@ -12,6 +12,8 @@
 
 3) **Avoid global variables**. 
     * Use `readonly` global constants with a prefix to avoid collisions
+      * Example: `readonly global_blah="meow"`
+      * Example: `readonly path_to_configuration="whatever"`
     * Once a global readonly variable is set, it cannot be unset or used in a local context
 
 4) **Use "local" variables** in functions
@@ -36,19 +38,44 @@
     * `some_command && X || Y` will execute X if some_command succeeds, Y if some_command fails, and Y if X fails
     
 10) Using `set -o errexit` without additional coding restrictions produces undesirable results
-    * see section below for additional restrictions
-    * otherwise, catch all errors manually:
+    * it is better to catch all errors manually:
         * `some_command blah blah || ERROR "...message..."`
+    * see section below for additional restrictions
       
 11) To completely shut down a script with backgrounded child processes, use `trap 'kill -- -$$' EXIT`
 
+12) To check if variable exists (has value or is null, but is not unset)
+    * `[ "${variable+exists}" ] || function_to_call_if_variable_does_not_exist`
+    * will not trigger a nounset error
+
+# Script Loader
+* Loads all functions so you don't have to worry about load order
+* Allows script entry code to appear at the top of the script
+* Makes using a main() function easier to do, and it's use unambigious when looking at source
+* NOTE: If using this script loader, do not execute any code in the global scope (except global constants)
+* NOTE: This example uses a universal argument processor (found in ~/scripts/lib/process_arguments)
+```
+#!/bin/dash
+
+[ "$loading" ] || {
+   set -o nounset
+   loading="true"
+   . "$0"
+   . ~/scripts/lib/process_arguments
+   main "$@"
+   exit
+}
+
+main(){
+   #...
+}
+
+```
+
+# Argument Processing
 
 
-
-
-
-
-## Processing Arguments
+## Basic Argument Processing
 ```
   while [ "$#" -gt 0 ]; do case "$1" in
     (--a)
@@ -68,7 +95,49 @@
   esac; shift; done
 ```
 
-
+## Automatic Argument Processing
+* Arguments are automatically read into variables
+  * `--argument` becomes `$__argument="true"`
+  * `--argument=value` becomes `$__argument="value"`
+  * `--argument-with-dashes=some-value` becomes `$__argument_with_dashes="some-value"`
+* Valid arguments must be declared before calling `process_arguments "$@"`
+  * ex: `__argument=""`
+  * may also be given a default value
+* Arguments will be validated using a `validate__argument` function (if defined)
+  * validator is passed a single argument, the parsed value
+  * validator responsible for printing error and halting script if invalid
+  * validator may just print warning and use an alternate value, if desired
+  * or, do anything you want (use it as a hook, for example)
+* This function's body can also be copypasta'd into whatever scope and will:
+  * remove all parsed --options from the positional paramaters
+  * leaves all non-parsed positional paramaters
+  * note: local statement will need to be removed if used in a global context
+* Requires an `ERROR` function
+```
+process_arguments(){
+   local argument left right
+	for argument; do 
+		shift
+		left="$(echo "${argument%%=*}" | tr - _)"
+		right="${argument#--*=}"
+		[ "$right" = "$argument" ] && right="true"
+		case "$left" in
+			(__*[!0-9A-Za-z_]*)
+				ERROR "INVALID OPTION: $argument"
+				;;
+			(__*)
+				eval "[ \"\${$left+exists}\" ] || ERROR \"INVALID OPTION: $argument\""
+            eval "$left=\"\$right\""
+				type "validate$left" > /dev/null \
+					&& "validate$left" "$right"
+				;;
+			(*)
+				set -- "$@" "$argument"
+				;;
+		esac
+	done
+}
+```
 
 # Input Validation
 
