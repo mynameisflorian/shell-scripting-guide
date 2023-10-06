@@ -1,10 +1,30 @@
 # shell-scripting-guide
 
+### [13 Best-practices I follow](#13-best-practices-i-follow)
+
+### [Script Loader](#script-loader)
+
+### [Argument Processing](#argument-processing)
+
+### [Input Validation](#input-validation)
+
+### ['\n' is a lie](#n-is-a-lie)
+
+### [Safe use of Eval](#safe-use-of-eval-1)
+
+### [POSIX shell-only string replacement function](#)
+
+### [Working with filenames](#)
+
+### [Shell Script Documentation](#)
+
+
+# 13 Best-practices I follow
 1) Whenever possible, **use dash instead of bash**
     * Dash is faster
     * Dash is less complicated
     * Dash is less error-prone
-    * Dash encourages "proper" use of shell scripts (see below)
+    * Dash encourages better use of shell scripts (see below)
     
 2) **Always quote variables**, unless variable expansion is specifically desired.
     * If possible, break such use into it's own function and document quoting exception.
@@ -20,31 +40,47 @@
     * Without the local specifier, any variables declared within a function are global variables.
 
 5) **Validate application and function inputs**
+   * My prefered validation is to use a series of || expressions.
+   * With multiple ||'s:
+      * Each test/action must fail to continue in the || sequence
+```
+	[ -d "$target_path" ] \
+     		|| mkdir -p "$target_path" \
+   		|| ERROR "Target path does not exist and cannot be created"
 
-6) **Avoid using eval**
+	[ ! -f "$output_filename" ] \
+		|| [ "$__clobber" ] \
+		|| ERROR "Output file already exists. Use --clobber to overwrite"
+
+   	is_digits "$age" \
+   		|| ERROR: "Age must be a whole number"
+   ```
+     
+7) **Avoid using eval**
     * If you must use it, use with extreme caution
     * See section below on safe use of eval
 
-7) **Use `set -o nounset`**
+8) **Use `set -o nounset`**
 
-8) When using **boolean variables** (true/false):
+9) When using **boolean variables** (true/false):
     * True: Use the value "true" 
     * False: Use the null value (ie "")
     * `[ "$boolean_value" ]`
     
-9) Avoid combining `&&` and `||` into a single expression
+10) Avoid combining `&&` and `||` into a single expression
     * evaluation can be unintuitive
     * `some_command || X && Y` will execute X if some_command fails, Y if some_command succeeds, and Y if X succeeds
     * `some_command && X || Y` will execute X if some_command succeeds, Y if some_command fails, and Y if X fails
     
-10) Using `set -o errexit` without additional coding restrictions produces undesirable results
+11) Using `set -o errexit` without additional coding restrictions produces undesirable results
     * it is better to catch all errors manually:
         * `some_command blah blah || ERROR "...message..."`
+        * this reads as "some_command ... OR ERROR...."
     * see section below for additional restrictions
       
-11) To completely shut down a script with backgrounded child processes, use `trap 'kill -- -$$' EXIT`
+12) To completely shut down a script with backgrounded child processes, use `trap 'kill -- -$$' EXIT`
 
-12) To check if variable exists (has value or is null, but is not unset)
+13) To check if variable exists (has value or is null, but is not unset)
     * `[ "${variable+exists}" ] || function_to_call_if_variable_does_not_exist`
     * will not trigger a nounset error
 
@@ -139,6 +175,46 @@ process_arguments(){
 }
 ```
 
+### Usage Example (w/ loader script)
+```
+
+	[ "$loading" ] || {
+	   set -o nounset
+	   loading="true"
+
+	   . "$0"
+	   . ~/scripts/lib/process_arguments
+	   main "$@"
+	   exit
+	}
+	
+	main(){
+	   [ "${1+exists}" ] || {
+		echo "action is required"
+                exit 1
+           }
+`          action="$1"
+           shift
+           case "$action" in
+               create)
+                  __name=""
+                  __big=""
+                  process_arguments "$@"
+                  do_create
+                  ;;
+               destroy)
+                  __name=""
+                  process_arguments "$@"
+                  do_destroy
+                  ;;
+	}
+
+        do_create(){
+           : ...
+        }
+
+```
+
 # Input Validation
 
 ### is_digits()
@@ -151,31 +227,25 @@ note: ```[ "${1##*[!0-9]*}" ]``` also works, but is slower
 
 
 
+# "\n" is a lie
+* The shell language doesn't unescape escaped newlines.
+* This is always handed by the command you are passing it to
+* If you want to print a raw string/variable, use printf:
+* ```printf "%s\n" "(\n)"```
 
-
-# Safe(er) use of Eval
-### ref(): Variable Reference Getter
-```
-# Usage: ref <variable-name>
-# Example: some_command $(ref "$1")
-ref(){
-  [ "$#" = 1 ] || ERROR "ref(): requires exactly one argument"
-  case "$1" in ([0-9]*|*[!a-zA-z0-9_]*) ERROR "ref(): invalid variable name";; esac
-  eval "printf \"%s\" \"\$$1\""
-}
-```
-### set_ref(): Variable Reference Setter
-```
-# Usage: set_ref <variable-name> <value>
-# Description: validates <variable-name> and sets variable by wrapping <value> in single quotes, replacing any single quotes in <value> with <'"'"'> 
-set_ref(){
-  [ "$#" = 2 ] || ERROR "set_ref(): requires exactly 2 arguments"
-  case "$1" in ([0-9]*|*[!a-zA-z0-9_]*) ERROR "set_ref(): invalid variable name";; esac
-  eval "$1=\"\$2\""
-}
-```
-note: 
-
+# Safe use of Eval
+* Eval is dangerous because it expands variables twice
+* This is also the primary use of an eval statement
+* Validate all unescaped variables before using them
+* All other variables simply need to be escaped:
+  ```eval "$validated=\"\$unvalidated\""```
+* To avoid the need to escape quote characters, use a heredoc:
+  ```
+  read -r eval <<-END
+	$validated="\$unvalidated"
+  END
+  eval "$eval"
+  ```
 
 
 # POSIX shell-only string replacement function
@@ -184,22 +254,24 @@ note: 
 # ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 # result is stored in the $return variable
 replace(){
+    if [ $# != 3 ] || [ ! "$2" ]; then
+	return 1
+    fi
     local rest="$1"
     local left=""
     return=""
-    while {
-        left="${rest%%"$2"*}"
-        [ "$left" != "$rest" ]
-    }; do
-        rest="${rest#*"$2"}"
-        return="$return$left$3"
-    done
-    return="$return$rest"
-    return 0
+    while [ "$rest" ]; do
+	left="${rest%%"$2"*}"
+	rest="${rest#"$left"}"
+	return="$return$left${rest:+"$3"}"
+	rest="${rest#"$2"}"
+   done
+   return 0
 }
 ```
 (see "working with filenames" for usage example)
-
+(for a shell function, this thing smokes in dash -- only runnung 3x slower than sed)
+(this function is most useful when working with filenames stored in a variable)
 
 
 
