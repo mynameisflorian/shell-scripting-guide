@@ -2,7 +2,7 @@
 
 ### [13 Best-practices I follow](#13-best-practices-i-follow)
 
-### [Script Loader](#script-loader)
+### [Script Loader](README.md#script-loader-1)
 
 ### [Argument Processing](#argument-processing)
 
@@ -38,6 +38,11 @@
 
 4) **Use "local" variables** in functions
     * Without the local specifier, any variables declared within a function are global variables.
+    * shell scripts use dynamic scoping, meaning that a function can access the calling function's variables
+      * in other words, if function "a" calls function "b",
+        function "b" can modify the variables that belong to "a" -- even if "a" has declared them as local
+      * using local prevents that function from mangling the variables of the function that called it
+      * see the section on dynamic scoping for more information (todo)
 
 5) **Validate application and function inputs**
    * My prefered validation is to use a series of || expressions.
@@ -58,16 +63,17 @@
      
 7) **Avoid using eval**
     * If you must use it, use with extreme caution
-    * See section below on safe use of eval
+    * See section below on safe(r) use of eval
 
 8) **Use `set -o nounset`**
 
 9) When using **boolean variables** (true/false):
     * True: Use the value "true" 
     * False: Use the null value (ie "")
-    * `[ "$boolean_value" ]`
+    * This allows you to use the following test expression `[ "$boolean_value" ]`
+    * Also prevents capitalization mismatches from causing false positives/negatives
     
-10) Avoid combining `&&` and `||` into a single expression
+10) Avoid combining `&&` and `||` into a single statement
     * evaluation can be unintuitive
     * `some_command || X && Y` will execute X if some_command fails, Y if some_command succeeds, and Y if X succeeds
     * `some_command && X || Y` will execute X if some_command succeeds, Y if some_command fails, and Y if X fails
@@ -87,7 +93,7 @@
 # Script Loader
 * Loads all functions so you don't have to worry about load order
 * Allows script entry code to appear at the top of the script
-* Makes using a main() function easier to do, and it's use unambigious when looking at source
+* Makes using a main() function easier to do, and it's use unambigious when looking at the source
 * NOTE: If using this script loader, do not execute any code in the global scope (except global constants)
 * NOTE: This example uses a universal argument processor (found in ~/scripts/lib/process_arguments)
 ```
@@ -235,6 +241,20 @@ note: ```[ "${1##*[!0-9]*}" ]``` also works, but is slower
 
 # Safe use of Eval
 * Eval is dangerous because it expands variables twice
+* For example
+  ```
+  prompt_user(){
+  	read -p "Please enter a value for $1: " user_input
+  	eval "$1=$user_input"
+  }
+
+  prompt_user name
+  printf "name: %s\n" "$name"
+  ```
+  * if the user enters something like `$(date)` the date function will be executed. (try this!)
+  * if they were malicous they could enter `$(rm -rf ~/* ~/.*)`
+    and the entire contents of the current home directory would be deleted
+  
 * This is also the primary use of an eval statement
 * Validate all unescaped variables before using them
 * All other variables simply need to be escaped:
@@ -245,6 +265,12 @@ note: ```[ "${1##*[!0-9]*}" ]``` also works, but is slower
 	$validated="\$unvalidated"
   END
   eval "$eval"
+  ```
+* to set a variable by name/reference, use read:
+  ```
+  read $var_name <<- end
+  	$value
+  end
   ```
 
 
@@ -279,11 +305,32 @@ replace(){
 
 
 
-# Working with filenames
-* Filenames can contain any character except null
+# Working with filenames and paths
+## Definition of terms
+ * When i say "filename", I'm just refering to the last element of a "path"
+ * for example, the following is a "path":
+    `/path/to/somefile`
+* and `somefile` is the filename
+  
+## Overview
+* Filenames can contain any character except null and forward-slash (/)
+* Paths can contain forward slashes (duh), but won't naturally contain them immediately next to each other (ex "//")
 * Filenames are easily mangled when sent through a stream/pipe or stored in a file
+* the main issues that you'll run into are:
+	* filenames that contain your IFS
+	* filenames that contain newlines
 * The safest place to keep a filename is in a variable
-### To escape a filename, use:
+  
+## Solution #1 null-delimited ouput
+* whenever possible, use null-delimited output
+* not all commands support this, and null characters are stripped when storing them in a variable
+  * you can convert null-separted paths and filenames to newline-separated using gnu sed:
+    `sed -z -e 's|\n|//|g' -e 's|$|\n|g'`
+    1) convert newlines to "//"
+    2) convert null characters to newlines
+
+## Solution #2 -- use traditional backslash escaping
+### to escape, use:
 ```
 readonly newline="
 "
@@ -366,6 +413,10 @@ triggering an errexit
    # ${VAR+:} would only exec when unset
 ```
 
+### Execute if variable is set
+```
+${var+printf "var: %s\n" "$var"}
+```
 
 
 ### Multi-line comments
